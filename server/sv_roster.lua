@@ -1,25 +1,24 @@
-local utils = require 'server.modules.utils'
+local utils = XTPrison.load 'modules.server.utils'
 
 -- View Jail Roster --
-lib.callback.register('xt-prison:server:getJailRoster', function(source)
+pr_lib.callback.register('xt-prison:server:getJailRoster', function(source)
     return utils.generateJailRoster()
 end)
 
 -- Unjails Player via Roster --
-lib.callback.register('xt-prison:server:unjailPlayerByRoster', function(source, targetSource)
-    local isCop = utils.isCop(source)
+pr_lib.callback.register('xt-prison:server:unjailPlayerByRoster', function(source, targetSource)
+    local isCop = utils.canManagePrison(source)
     if not isCop then return false end
 
-    local state = Player(targetSource).state
+    local state = XTPrison.playerState(targetSource)
     if state and state.jailTime > 0 then
-        setJailTime(targetSource, 0)
+        local released, reason = XTPrison.releasePlayer(targetSource)
+        if not released then XTPrison.actionFailure(source, targetSource, 'release', reason); return false end
 
-        lib.notify(targetSource, {
+        XTPrison.notifyPlayer(targetSource, {
             title = locale('notify.freedom'),
             description = locale('notify.unjailed_by_roster')
         })
-        Wait(3000)
-        local released = lib.callback.await('xt-prison:client:exitJail', targetSource, true)
         return released
     end
 
@@ -27,19 +26,24 @@ lib.callback.register('xt-prison:server:unjailPlayerByRoster', function(source, 
 end)
 
 -- Set Player Jail Time via Roster --
-lib.callback.register('xt-prison:server:changePlayerJailTimeByRoster', function(source, targetSource, newTime)
-    local isCop = utils.isCop(source)
+pr_lib.callback.register('xt-prison:server:changePlayerJailTimeByRoster', function(source, targetSource, newTime)
+    local isCop = utils.canManagePrison(source)
     if not isCop then return false end
 
-    local state = Player(targetSource).state
+    local state = XTPrison.playerState(targetSource)
     if state and state.jailTime > 0 then
-        setJailTime(targetSource, newTime)
+        local changed, reason = XTPrison.jailPlayer(targetSource, newTime)
+        if not changed then XTPrison.actionFailure(source, targetSource, 'jail', reason); return false end
+        local sentence = XTPrison.playerState(targetSource).jailSentence
 
-        lib.notify(targetSource, {
+        XTPrison.notifyPlayer(targetSource, {
             title = locale('notify.new_time_by_roster'),
-            description = (locale('notify.new_time_by_roster_description')):format(newTime)
+            description = ('Nova pena: %s %s (%s)'):format(sentence.amount, sentence.unit, sentence.clock == 'game' and 'tempo do jogo' or 'vida real')
         })
+        return true
     end
 
-    return state and (state.jailTime == newTime) or false
+    return false
 end)
+
+

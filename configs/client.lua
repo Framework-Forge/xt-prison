@@ -120,28 +120,16 @@ return {
         }
     },
 
-    PlayJailSound = function()
-        if GetResourceState('qbx_core') == 'started' then
-            lib.load('@qbx_core.modules.lib')
-
-            qbx.loadAudioBank('audiodirectory/xt_prison_sounds')
-            qbx.playAudio({
-                audioName = 'cell_door',
-                audioRef = 'xt_prison'
-            })
-            ReleaseNamedScriptAudioBank('audiodirectory/xt_prison_sounds')
-        else
-            local soundId = GetSoundId()
-            RequestScriptAudioBank('audiodirectory/xt_prison_sounds', false)
-            PlaySoundFrontend(soundId, 'cell_door', 'xt_prison', true)
-            ReleaseNamedScriptAudioBank('audiodirectory/xt_prison_sounds')
-        end
+    playJailSound     = function()
+        RequestScriptAudioBank('audiodirectory/jail_sounds', false)
+        PlaySoundFromEntity(GetSoundId(), 'jail', PlayerPedId(), 'jail_soundset', false, false)
+        ReleaseNamedScriptAudioBank('audiodirectory/jail_sounds')
     end,
 
 
     -- Reloads Player's Last Skin When Freed --
     ResetClothing = function()
-        -- TriggerEvent('illenium-appearance:client:reloadSkin', true)
+        TriggerEvent('illenium-appearance:client:reloadSkin', true)
     end,
 
     -- Triggered on Player Heal --
@@ -149,22 +137,20 @@ return {
         -- TriggerEvent('qbx_medical:client:playerRevived')
         -- TriggerEvent('hospital:client:Revive')
         -- TriggerEvent('osp_ambulance:partialRevive')
-        -- exports.randol_medical:RevivePlayer()
     end,
 
     -- Trigger Emote --
     Emote = function(emote)
-        -- exports.scully_emotemenu:playEmoteByCommand(emote)
+        return pr_lib.load('@pr_bridge/bridge/emotes/client').play(emote)
         -- exports["rpemotes"]:EmoteCommandStart(emote)
-        -- exports["bablo-animations"]:playAnimation(cache.ped, emote)
     end,
 
     -- Trigger Prison Break Dispatch --
     Dispatch = function(coords)
-        -- exports['ps-dispatch']:PrisonBreak()
+        exports['ps-dispatch']:PrisonBreak()
         -- TriggerEvent('police:client:policeAlert', coords, 'Prison Break')
 
-        -- ND Core
+       -- ND Core
         -- exports["ND_MDT"]:createDispatch({
         --             caller = "Boilingbroke Penitentiary",
         --             location = "Sandy Shores",

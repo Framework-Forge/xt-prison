@@ -21,7 +21,7 @@
 - Compatabile with [xt-prisonjobs](https://xtdev.tebex.io/package/5226873) prison addons. Adds jobs, crafting, trading, and more.
 
 # Prison Break Features:
-- Global statebags for prison break alarms and all prison gate terminals
+- PR Bridge cache and snapshot/event synchronization for prison alarms and gate terminals
 - isBusy and isHacked states for gate terminals
 - Configurable function to use any minigame for hacking the gate terminals
 - Different random chances alarm is enabled for failed & successful hacking attempts
@@ -30,10 +30,11 @@
 - Cooldowns on all gate terminals
 
 # Dependencies:
-- [ox_lib](https://github.com/overextended/ox_lib/releases)
-- [ox_inventory](https://github.com/overextended/ox_inventory/releases)
-- [ox_target](https://github.com/overextended/ox_target/releases)
-- [ox_doorlock](https://github.com/overextended/ox_doorlock/releases)
+- `pr_bridge`
+
+Framework, banco, inventário, target, menus e notificações são resolvidos pelo PR Bridge. A integração existente de portões ainda utiliza exports/eventos do doorlock; ela não foi migrada nesta etapa.
+
+Migração de cache, instalação do banco e roteiro de homologação: [Forge cache migration](docs/FORGE_CACHE_MIGRATION.md).
 
 # Supported Frameworks:
 - 🟩 | QB / QBX

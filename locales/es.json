@@ -1,5 +1,6 @@
 {
     "notify": {
+        "action_failed": "La acción de prisión falló: %s",
         "freedom": "¡Libertad!",
         "new_time_by_roster": "Nuevo tiempo de condena",
         "new_time_by_roster_description": "Tu condena ha sido establecida en %s meses",

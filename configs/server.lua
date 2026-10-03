@@ -1,5 +1,5 @@
 return {
-    EnableJailCommand = true,                   -- Jail command using ox_lib input menu
+    EnableJailCommand = true,                   -- Jail command using the pr_bridge input menu
 
     UnemployedJobName = 'unemployed',           -- Name of unemployed job (if remove job is enabled)
 

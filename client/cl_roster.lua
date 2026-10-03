@@ -1,18 +1,18 @@
-local config = lib.load('configs.client')
+local config = XTPrison.load 'configs.client'
 local rosterZone
 
 -- Unjail Player --
 local function unjailConfirmation(info)
-    local confirmation = lib.alertDialog({
+    local confirmation = pr_lib.AlertDialog({
         header = ('Unjail %s?'):format(info.name),
         content = ('Are you sure you want to unjail **%s**?  \nThey still have **%s Months** left.'):format(info.name, info.jailTime),
         centered = true,
         cancel = true,
     }) if confirmation == 'cancel' then return end
 
-    local unjailed = lib.callback.await('xt-prison:server:unjailPlayerByRoster', false, info.source)
+    local unjailed = pr_lib.callback.await('xt-prison:server:unjailPlayerByRoster', false, info.source)
     if unjailed then
-        lib.notify({
+        pr_lib.Notify({
             title = ('%s was released!'):format(info.name),
             type = 'success'
         })
@@ -21,15 +21,26 @@ end
 
 -- Change Player's Jail Time --
 local function changeJailTime(info)
-    local newTime = lib.inputDialog(('Change Jail Time: %s'):format(info.name), {
-        { type = 'number', label = 'New Jail Time', description = ('Time Left: %s Months'):format(info.jailTime), icon = 'hashtag' },
+    local rules = XTPrison.settings and XTPrison.settings.sentence or {}
+    local newTime = pr_lib.InputDialog(('Change Jail Time: %s'):format(info.name), {
+        { type = 'number', label = 'Novo tempo', description = ('Restante: %s minutos'):format(info.jailTime), icon = 'hashtag', default = 1, min = 1, max = tonumber(rules.maxAmount) or 9999, required = true },
+        { type = 'select', label = 'Unidade', default = rules.defaultUnit or 'minutes', required = true, options = {
+            { label = 'Minutos', value = 'minutes' },
+            { label = 'Horas', value = 'hours' },
+            { label = 'Dias', value = 'days' },
+        }},
+        { type = 'select', label = 'Contagem', default = rules.defaultClock or 'real', required = true, options = {
+            { label = 'Vida real', value = 'real' },
+            { label = 'Tempo do jogo', value = 'game' },
+        }},
     }) if not newTime then return end
 
-    local setTime = lib.callback.await('xt-prison:server:changePlayerJailTimeByRoster', false, info.source, newTime[1])
+    local sentence = { amount = tonumber(newTime[1]), unit = newTime[2], clock = newTime[3] }
+    local setTime = pr_lib.callback.await('xt-prison:server:changePlayerJailTimeByRoster', false, info.source, sentence)
     if setTime then
-        lib.notify({
+        pr_lib.Notify({
             title = ('Changed %s\'s Jail Time!'):format(info.name),
-            description = ('New Time: %s'):format(newTime[1]),
+            description = ('Nova pena: %s %s (%s)'):format(newTime[1], newTime[2], newTime[3] == 'game' and 'tempo do jogo' or 'vida real'),
             type = 'success'
         })
     end
@@ -53,17 +64,17 @@ local function rosterActionMenu(info)
         }
     }
 
-    lib.registerContext({
+    pr_lib.RegisterContext({
         id = 'prisoners_roster_actions',
         title = info.name,
         menu = 'prisoners_roster',
         options = actions
     })
-    lib.showContext('prisoners_roster_actions')
+    pr_lib.ShowContext('prisoners_roster_actions')
 end
 
 local function openPublicRoster()
-    local jailRoster = lib.callback.await('xt-prison:server:getJailRoster', false)
+    local jailRoster = pr_lib.callback.await('xt-prison:server:getJailRoster', false)
     if not jailRoster then return end
 
     if not jailRoster[1] then
@@ -79,17 +90,19 @@ local function openPublicRoster()
         end
     end
 
-    lib.registerContext({
+    pr_lib.RegisterContext({
         id = 'prisoners_public_roster',
         title = 'Jail Roster',
         options = jailRoster
     })
-    lib.showContext('prisoners_public_roster')
+    pr_lib.ShowContext('prisoners_public_roster')
 end
 
 local function createRosterZone()
+    if rosterZone then return end
     local zoneInfo = config.RosterLocation
-    rosterZone = exports.ox_target:addSphereZone({
+    rosterZone = pr_lib.target.addSphereZone({
+        name = 'xt_prison_roster',
         coords = zoneInfo.coords,
         radius = zoneInfo.radius,
         debug = zoneInfo.DebugPoly,
@@ -105,7 +118,8 @@ local function createRosterZone()
 end
 
 local function removeRosterZone()
-    exports.ox_target:removeZone(rosterZone)
+    if rosterZone then pr_lib.target.removeZone(rosterZone) end
+    rosterZone = nil
 end
 
 -- Open Prisoners Manageable Roster as Cop --
@@ -127,12 +141,12 @@ RegisterNetEvent('xt-prison:client:openPrivateJailRoster', function(jailRoster)
         end
     end
 
-    lib.registerContext({
+    pr_lib.RegisterContext({
         id = 'prisoners_roster',
         title = 'Jail Roster',
         options = jailRoster
     })
-    lib.showContext('prisoners_roster')
+    pr_lib.ShowContext('prisoners_roster')
 end)
 
 AddEventHandler('onResourceStart', function(resource)
@@ -152,3 +166,9 @@ end)
 AddEventHandler('xt-prison:client:onUnload', function()
     removeRosterZone()
 end)
+
+AddEventHandler('xt-prison:client:configurationUpdated', function()
+    removeRosterZone()
+    createRosterZone()
+end)
+

@@ -1,8 +1,8 @@
-local config    = lib.load('configs.server')
-local utils     = require 'server.modules.utils'
+local config    = XTPrison.load 'configs.server'
+local utils     = XTPrison.load 'modules.server.utils'
 
 -- Check Jail Time --
-lib.addCommand('jailtime', {
+pr_lib.addCommand('jailtime', {
     help = locale('commands.check_time'),
     params = {},
     restricted = false
@@ -11,13 +11,13 @@ lib.addCommand('jailtime', {
 end)
 
 -- Jail Roster --
-lib.addCommand('prisoners', {
+pr_lib.addCommand('prisoners', {
     help = locale('commands.prisoners_roster'),
     params = {},
     restricted = false
 }, function(source, args, raw)
-    if not utils.isCop(source) then
-        lib.notify(source, {
+    if not utils.canManagePrison(source) then
+        XTPrison.notifyPlayer(source, {
             title = locale('notify.no_access'),
             type = 'info'
         })
@@ -32,16 +32,41 @@ end)
 
 -- Jail/Unjail Player Commands --
 if config.EnableJailCommand then
-    lib.addCommand('jail', {
+    pr_lib.addCommand('jail', {
         help = locale('commands.jail'),
         params = {},
         restricted = false
     }, function(source, args, _)
+        if config.EnableJailCommand == false then
+            return XTPrison.notifyPlayer(source, {
+                title = 'XT Prison',
+                description = 'O comando de prisão está desativado na configuração.',
+                type = 'error'
+            })
+        end
         local player = getPlayer(source)
         if not player then return end
 
-        if utils.isCop(source) then
-            local nearbyPlayers = lib.getNearbyPlayers(GetEntityCoords(GetPlayerPed(source)), 5.0)
+        if utils.canManagePrison(source) then
+            local isAdmin = utils.isAdmin(source)
+            local sourceCoords = GetEntityCoords(GetPlayerPed(source))
+            local nearbyPlayers = {}
+            for _, playerSource in ipairs(GetPlayers()) do
+                playerSource = tonumber(playerSource)
+                if playerSource and getPlayer(playerSource) and (playerSource ~= source or isAdmin)
+                    and GetPlayerRoutingBucket(playerSource) == GetPlayerRoutingBucket(source) then
+                    local playerPed = GetPlayerPed(playerSource)
+                    local playerCoords = GetEntityCoords(playerPed)
+                    local distance = #(sourceCoords - playerCoords)
+                    if distance <= 5.0 then
+                        nearbyPlayers[#nearbyPlayers + 1] = {
+                            id = playerSource,
+                            coords = playerCoords,
+                            distance = distance,
+                        }
+                    end
+                end
+            end
             local formattedPlayers = {}
 
             for i = 1, #nearbyPlayers do
@@ -50,7 +75,7 @@ if config.EnableJailCommand then
                 formattedPlayers[#formattedPlayers + 1] = {
                     label = getCharName(pid) .. ' (' .. pid .. ')',
                     value = pid,
-                    distance = #(GetEntityCoords(GetPlayerPed(source)) - nearbyPlayers[i].coords)
+                    distance = nearbyPlayers[i].distance
                 }
             end
 
@@ -58,15 +83,24 @@ if config.EnableJailCommand then
                 return a.distance < b.distance
             end)
 
-            local jailInput = lib.callback.await('xt-prison:client:jailPlayerInput', source, formattedPlayers)
-            if not jailInput then return end
+            local jailInput, inputError = pr_lib.callback.awaitClient(source, 'xt-prison:client:jailPlayerInput', 120000, formattedPlayers)
+            if inputError then XTPrison.actionFailure(source, source, 'jail_input', inputError); return end
+            if type(jailInput) ~= 'table' or not utils.canManagePrison(source) then return end
 
             local targetSource = tonumber(jailInput[1])
-            local setTime = tonumber(jailInput[2])
+            if not targetSource or (targetSource == source and not utils.isAdmin(source)) then return end
+            if GetPlayerRoutingBucket(targetSource) ~= GetPlayerRoutingBucket(source) then return end
+            local sentence = {
+                amount = tonumber(jailInput[2]),
+                unit = jailInput[3],
+                clock = jailInput[4],
+            }
+            local unitLabels = { minutes = 'minutos', hours = 'horas', days = 'dias' }
+            local sentenceLabel = ('%s %s (%s)'):format(sentence.amount or 0, unitLabels[sentence.unit] or sentence.unit, sentence.clock == 'game' and 'tempo do jogo' or 'vida real')
 
             local targetPlayer = getPlayer(targetSource)
             if not targetPlayer then
-                return lib.notify(source, {
+                return XTPrison.notifyPlayer(source, {
                     title = locale('notify.invalid_player'),
                     type = 'error'
                 })
@@ -75,42 +109,25 @@ if config.EnableJailCommand then
             local dist = utils.playerDistanceCheck(source, targetSource)
             if not dist then return end
 
-            local notifyTitle = (locale('notify.player_sent')):format(getCharName(targetSource), setTime)
-            local state = Player(targetSource).state
-            if state?.jailTime and state?.jailTime > 0 then
-                if setTime < 0 then
-                    setTime = 0
-                end
+            local notifyTitle = ('%s foi preso por %s'):format(getCharName(targetSource), sentenceLabel)
+            local jailed, jailError = XTPrison.jailPlayer(targetSource, sentence)
+            if not jailed then XTPrison.actionFailure(source, targetSource, 'jail', jailError); return end
 
-                setJailTime(targetSource, setTime)
-
-                lib.notify(targetSource, {
-                    title = locale('notify.time_updated'),
-                    description = (locale('notify.time_updated_description')):format(setTime),
-                    icon = 'fas fa-lock',
-                    type = 'success',
-                    duration = 5000
-                })
-                notifyTitle = (locale('notify.updated_players_times')):format(getCharName(targetSource), setTime)
-            else
-                lib.callback.await('xt-prison:client:enterJail', targetSource, setTime)
-            end
-
-            lib.notify(source, {
+            XTPrison.notifyPlayer(source, {
                 title = notifyTitle,
                 icon = 'fas fa-lock',
                 type = 'success',
                 duration = 5000
             })
         else
-            lib.notify(source, {
+            XTPrison.notifyPlayer(source, {
                 title = locale('notify.no_access'),
                 type = 'info'
             })
         end
     end)
 
-    lib.addCommand('unjail', {
+    pr_lib.addCommand('unjail', {
         help = locale('commands.unjail'),
         params = {{
             name = 'id',
@@ -118,24 +135,25 @@ if config.EnableJailCommand then
             help = locale('commands.playerid')
         }}
     }, function(source, args)
-        if not utils.isCop(source) then return end
+        if not utils.canManagePrison(source) then return end
 
         local targetPlayer = getPlayer(args.id)
         if not targetPlayer then
-            return lib.notify(source, {
+            return XTPrison.notifyPlayer(source, {
                 title = locale('notify.invalid_player'),
                 type = 'error'
             })
         end
 
-        local state = Player(args.id).state
+        local state = XTPrison.playerState(args.id)
         if state and state.jailTime <= 0 then
             return
         end
 
-        local released = lib.callback.await('xt-prison:client:exitJail', args.id, true)
+        local released, releaseError = XTPrison.releasePlayer(args.id)
+        if not released then XTPrison.actionFailure(source, args.id, 'release', releaseError); return end
         if released then
-            lib.notify(source, {
+            XTPrison.notifyPlayer(source, {
                 title = (locale('notify.player_released')):format(getCharName(args.id)),
                 icon = 'fas fa-lock',
                 type = 'success',
@@ -144,3 +162,5 @@ if config.EnableJailCommand then
         end
     end)
 end
+
+

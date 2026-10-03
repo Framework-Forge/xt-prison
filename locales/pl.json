@@ -1,5 +1,6 @@
 {
   "notify": {
+        "action_failed": "Operacja więzienia nie powiodła się: %s",
     "freedom": "Wolność!",
     "new_time_by_roster": "Nowy wyrok",
     "new_time_by_roster_description": "Twój wyrok został ustawiony na %s miesięcy!",
