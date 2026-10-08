@@ -13,7 +13,9 @@ end
 -- Compat for QB/QBX Prison Original Event --
 RegisterNetEvent('prison:server:SetJailStatus', function(jailTime)
     local src = source
-    setJailTime(src, ((jailTime < 0) and 0 or jailTime))
+    -- Legacy clients cannot clear or rewrite a server-owned sentence.
+    local state=XTPrison.playerState(src)
+    if state then syncJailCompatibility(src,state.prisonStatus=='jailed' and state.jailTime or 0) end
 end)
 
 -- Compat Event for QB Police Job --

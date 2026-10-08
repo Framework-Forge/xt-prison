@@ -27,22 +27,28 @@ function setCharJob(source, job, grade)
     return success == true or (current and current.name == job) or false, reason
 end
 
-function setJailTime(source, time)
+function setJailTime(source, time, status)
     local playerState = XTPrison.playerState(source)
     if not playerState or not getPlayer(source) then return false end
 
     time = tonumber(time)
     if not time or time ~= time or time == math.huge or time == -math.huge then return false end
     time = math.max(0, math.floor(time))
+    status = status or (time > 0 and 'jailed' or 'free')
+    if status ~= 'jailed' and status ~= 'fugitive' and status ~= 'free' then return false end
+    if status == 'free' then time = 0 end
+    playerState:set('prisonStatus', status, true)
+    playerState:set('prisonLoaded', true, true)
     playerState:set('jailTime', time, true)
     playerState:set('xtprison_identifier', getCharID(source), true)
-    if time <= 0 then playerState:set('jailSentence', nil, true) end
+    if status == 'free' then playerState:set('jailSentence', nil, true) end
 
     if type(framework.SetPlayerMetadata) == 'function' then
-        framework.SetPlayerMetadata(source, 'injail', time)
+        framework.SetPlayerMetadata(source, 'injail', status == 'jailed' and time or 0)
+        framework.SetPlayerMetadata(source, 'prisonStatus', status)
     end
 
-    syncJailCompatibility(source, time)
+    syncJailCompatibility(source, status == 'jailed' and time or 0)
     return playerState.jailTime == time
 end
 

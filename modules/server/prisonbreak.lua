@@ -41,21 +41,74 @@ end
 
 -- Breakout of Prison --
 function prisonModules.prisonBreakout(src)
-    local player = getPlayer(src)
+    if not getPlayer(src) or not XTPrison.ensureLoaded(src) then return false end
     local playerState = XTPrison.playerState(src)
-    if not playerState then return end
-
-    setJailTime(src, 0) -- Set jail time to zero
+    if not playerState or playerState.prisonStatus ~= 'jailed' then return false end
+    -- Never trust the client merely reporting an escape.
+    local ped = GetPlayerPed(src)
+    if not ped or ped == 0 then return false end
+    local coords = GetEntityCoords(ped)
+    local boundary = prisonBreakcfg.Boundary
+    local inside
+    if boundary and boundary.shape == 'poly' and type(boundary.points) == 'table' and #boundary.points >= 3 then
+        inside = false
+        local previous = #boundary.points
+        for index, point in ipairs(boundary.points) do
+            local other = boundary.points[previous]
+            if ((point.y > coords.y) ~= (other.y > coords.y)) and
+                coords.x < (other.x-point.x)*(coords.y-point.y)/((other.y-point.y)+0.0000001)+point.x then inside = not inside end
+            previous = index
+        end
+        inside = inside and coords.z >= (boundary.minZ or -1000) and coords.z <= (boundary.maxZ or 1000)
+    else
+        inside = #(coords-prisonBreakcfg.Center) <= prisonBreakcfg.Radius
+    end
+    if inside then return false end
+    local previous = playerState.jailSentence
+    local sentence = playerState.jailSentence or {}
+    local remaining = tonumber(playerState.jailTime) or 0
+    if sentence.clock == 'real' and tonumber(sentence.endAt) then
+        remaining = math.max(0,math.ceil((sentence.endAt-os.time())/60))
+    end
+    if remaining <= 0 then return false end
+    sentence.remainingMinutes = remaining
+    sentence.escapedAt = os.time()
+    sentence.endAt, sentence.nextTickAt = nil, nil
+    local identifier = getCharID(src)
+    local lock = 'xt-prison:action:' .. identifier
+    if pr_lib.cache.get(lock) then return false end
+    pr_lib.cache.set(lock,true)
+    local ok, saved = pcall(function()
+        if not setJailTime(src,remaining,'fugitive') then return false end
+        playerState:set('jailSentence',sentence,true)
+        return XTPrison.persistPlayer(src)
+    end)
+    if not ok or not saved then
+        if getCharID(src) == identifier then
+            setJailTime(src,remaining,'jailed')
+            playerState:set('jailSentence',previous,true)
+        end
+        pr_lib.cache.clear(lock)
+        return false
+    end
+    pr_lib.cache.clear(lock)
 
     -- Delete Confiscated Inv --
-    local CID = getCharID(src)
-    local confiscatedItems = pr_lib.database.scalar(db.GET_ITEMS, { CID })
-    confiscatedItems = json.decode(confiscatedItems or '[]')
-    if confiscatedItems and next(confiscatedItems) then
-        pr_lib.database.execute(db.CLEAR_CONFISCATED_ITEMS, { CID })
-    end
+    local cleaned, cleanupError = pcall(function()
+        local confiscatedItems = pr_lib.database.scalar(db.GET_ITEMS, { identifier })
+        confiscatedItems = json.decode(confiscatedItems or '[]')
+        if type(confiscatedItems)=='table' and next(confiscatedItems) then
+            pr_lib.database.execute(db.CLEAR_CONFISCATED_ITEMS, { identifier })
+        end
+    end)
+    if not cleaned then XTPrison.log('error',tostring(cleanupError)) end
 
-    return (playerState.jailTime == 0)
+    -- Alarm is a consequence, never a prerequisite for recording an escape.
+    for _, escape in ipairs(prisonBreakcfg.Escapes or {}) do
+        local alarmOk, alarmError = pcall(prisonModules.setEscapeAlarm,escape.id,true)
+        if not alarmOk then XTPrison.log('error',tostring(alarmError)) end
+    end
+    return playerState.prisonStatus == 'fugitive'
 end
 
 -- Countdown for Alarms to Turn Off --

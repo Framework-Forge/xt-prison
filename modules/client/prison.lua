@@ -5,6 +5,8 @@ local prisonBreakModules    = XTPrison.load 'modules.client.prisonbreak'
 local utils                 = XTPrison.load 'modules.client.utils'
 
 local inJail = false
+local enteringPrison = false
+local uniformRevision = 0
 
 local mainBlip
 local PrisonZone
@@ -91,12 +93,12 @@ function prisonModules.createPrisonZone()
         while zone.active do
             local coords = GetEntityCoords(PlayerPedId())
             local inside = isInsidePrison(coords)
-            if zone.wasInside and not inside and inJail then
-                inJail = false
-                local alarm = pr_lib.callback.await('xt-prison:server:setPrisonAlarms', false, true)
-                if alarm then
+            if not inside and inJail then
+                local escaped = pr_lib.callback.await('xt-prison:server:confirmBreakout', false)
+                if escaped then
+                    inJail = false
+                    prisonModules.removeCheckoutLocation()
                     pr_lib.Notify({ title = locale('notify.escaped'), type = 'error' })
-                    TriggerServerEvent('xt-prison:server:triggerBreakout')
                     config.Dispatch(prisonBreakcfg.Center)
                 end
             end
@@ -112,6 +114,7 @@ end
 
 -- Removes All Prison Zones, Blips, etc --
 function prisonModules.prisonCleanup()
+    uniformRevision = uniformRevision + 1
     inJail = false
     TriggerServerEvent('xt-prison:server:saveJailTime')
     if PrisonZone then PrisonZone:remove() end
@@ -135,18 +138,32 @@ function prisonModules.setPlayerCoords(coords)
 end
 
 -- Entering Prison --
-function prisonModules.enterPrison(setTime)
+local function enterPrison(setTime)
     local setServerJailTime = pr_lib.callback.await('xt-prison:server:setJailStatus', false, setTime)
     if not setServerJailTime then
         return false, 'jail_state_failed'
     end
+    if XTPrison.refreshCache and not XTPrison.refreshCache() then return false,'cache_unavailable' end
+    -- The login ped can still be Michael while appearance is being fetched.
+    -- Never position or animate that temporary ped as the prisoner.
+    if config.EnablePrisonOutfits then
+        local deadline = GetGameTimer()+20000
+        local male,female = GetHashKey('mp_m_freemode_01'),GetHashKey('mp_f_freemode_01')
+        while not IsPedModel(PlayerPedId(),male) and not IsPedModel(PlayerPedId(),female) do
+            if GetGameTimer() >= deadline then return false,'character_model_not_ready' end
+            if playerState.prisonStatus ~= 'jailed' then return false,'sentence_changed' end
+            Wait(100)
+        end
+    end
     local sentenceInfo = type(setServerJailTime) == 'table' and setServerJailTime or nil
     local sentenceMinutes = sentenceInfo and sentenceInfo.remainingMinutes or tonumber(setTime) or tonumber(playerState.jailTime) or 0
 
-    if inJail then
+    if inJail and isInsidePrison(GetEntityCoords(PlayerPedId())) then
         prisonModules.setJailTime(sentenceMinutes)
+        if config.EnablePrisonOutfits then prisonModules.applyPrisonUniform() end
         return true
     end
+    inJail = false
 
     if type(config.Spawns) ~= 'table' or #config.Spawns == 0 then return false, 'spawn_missing' end
 
@@ -178,9 +195,7 @@ function prisonModules.enterPrison(setTime)
                 end
 
                 if HasCollisionLoadedAroundEntity(ped) then
-                    if config.EnablePrisonOutfits then
-                        prisonModules.applyPrisonUniform()
-                    end
+                    if config.EnablePrisonOutfits and not prisonModules.applyPrisonUniform() then return false,'uniform_not_ready' end
                     inJail = true
                     positioned = true
                 end
@@ -228,6 +243,18 @@ function prisonModules.enterPrison(setTime)
     end
 
     return false
+end
+
+function prisonModules.enterPrison(setTime)
+    local deadline = GetGameTimer()+45000
+    while enteringPrison and GetGameTimer()<deadline do Wait(50) end
+    if enteringPrison then return false,'entry_busy' end
+    enteringPrison = true
+    local ok,result,reason = pcall(enterPrison,setTime)
+    enteringPrison = false
+    if not ok then return false,tostring(result) end
+    if result == true then prisonModules.reconcilePrisonUniform() end
+    return result,reason
 end
 
 -- Exiting Prison --
@@ -294,15 +321,43 @@ function prisonModules.timeReductionLoop()
 end
 
 function prisonModules.applyPrisonUniform()
+    if not config.EnablePrisonOutfits or playerState.prisonStatus ~= 'jailed' or (tonumber(playerState.jailTime) or 0) <= 0 then return false end
     local ped = PlayerPedId()
-    local outifitInfo = IsPedModel(ped, 'mp_m_freemode_01') and config.PrisonOufits.male or config.PrisonOufits.female
-    SetPedComponentVariation(ped, 1, outifitInfo.mask.item, outifitInfo.mask.texture)
-    SetPedComponentVariation(ped, 3, outifitInfo.arms.item, outifitInfo.arms.texture)
-    SetPedComponentVariation(ped, 4, outifitInfo.pants.item, outifitInfo.pants.texture)
-    SetPedComponentVariation(ped, 6, outifitInfo.shoes.item, outifitInfo.shoes.texture)
-    SetPedComponentVariation(ped, 7, outifitInfo.accessories.item, outifitInfo.accessories.texture)
-    SetPedComponentVariation(ped, 8, outifitInfo.shirt.item, outifitInfo.shirt.texture)
-    SetPedComponentVariation(ped, 11, outifitInfo.jacket.item, outifitInfo.jacket.texture)
+    local male,female=IsPedModel(ped,GetHashKey('mp_m_freemode_01')),IsPedModel(ped,GetHashKey('mp_f_freemode_01'))
+    if not male and not female then return false end
+    local outifitInfo = male and config.PrisonOufits.male or config.PrisonOufits.female
+    SetPedComponentVariation(ped, 1, outifitInfo.mask.item, outifitInfo.mask.texture, 0)
+    SetPedComponentVariation(ped, 3, outifitInfo.arms.item, outifitInfo.arms.texture, 0)
+    SetPedComponentVariation(ped, 4, outifitInfo.pants.item, outifitInfo.pants.texture, 0)
+    SetPedComponentVariation(ped, 6, outifitInfo.shoes.item, outifitInfo.shoes.texture, 0)
+    SetPedComponentVariation(ped, 7, outifitInfo.accessories.item, outifitInfo.accessories.texture, 0)
+    SetPedComponentVariation(ped, 8, outifitInfo.shirt.item, outifitInfo.shirt.texture, 0)
+    SetPedComponentVariation(ped, 11, outifitInfo.jacket.item, outifitInfo.jacket.texture, 0)
+    return true
+end
+
+-- Saved appearance may arrive late or replace the ped. One low-frequency worker
+-- exists only while jailed; it never saves over the civilian appearance.
+function prisonModules.reconcilePrisonUniform()
+    uniformRevision = uniformRevision + 1
+    if not config.EnablePrisonOutfits or not inJail or playerState.prisonStatus ~= 'jailed' then return end
+    local revision = uniformRevision
+    CreateThread(function()
+        local slots = {[1]='mask',[3]='arms',[4]='pants',[6]='shoes',[7]='accessories',[8]='shirt',[11]='jacket'}
+        while revision == uniformRevision do
+            if not inJail or playerState.prisonStatus ~= 'jailed' or (tonumber(playerState.jailTime) or 0) <= 0 or not config.EnablePrisonOutfits then return end
+            local ped = PlayerPedId()
+            local outfit = IsPedModel(ped,GetHashKey('mp_m_freemode_01')) and config.PrisonOufits.male or config.PrisonOufits.female
+            for slot,name in pairs(slots) do
+                local component = outfit[name]
+                if GetPedDrawableVariation(ped,slot) ~= component.item or GetPedTextureVariation(ped,slot) ~= component.texture then
+                    prisonModules.applyPrisonUniform()
+                    break
+                end
+            end
+            Wait(1000)
+        end
+    end)
 end
 
 return prisonModules

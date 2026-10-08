@@ -76,7 +76,7 @@ if server then
             revision = cache.get(prefix .. 'worldRevision') or 0,
             playerRevision = cache.get(prefix .. 'playerRevision') or 0,
             player = state and {
-                jailTime = state.jailTime, jailSentence = state.jailSentence,
+                jailTime = state.jailTime, jailSentence = state.jailSentence, prisonStatus = state.prisonStatus,
                 xtprison_identifier = state.xtprison_identifier,
             } or {},
         }
@@ -140,6 +140,6 @@ end)
 
 exports('GetPrisonCache', function(src)
     local state = server and XTPrison.playerState(src) or XTPrison.localState
-    return state and { jailTime = state.jailTime, jailSentence = state.jailSentence,
+    return state and { jailTime = state.jailTime, jailSentence = state.jailSentence, prisonStatus = state.prisonStatus,
         xtprison_identifier = state.xtprison_identifier } or nil
 end)

@@ -57,6 +57,9 @@ RegisterNetEvent('xt-prison:server:removePrisonbreakItems', function(success, te
 end)
 
 -- Breakout of Prison --
+pr_lib.callback.register('xt-prison:server:confirmBreakout', function(src)
+    return prisonModules.prisonBreakout(src) == true
+end)
 RegisterNetEvent('xt-prison:server:triggerBreakout', function()
     local src = source
     prisonModules.prisonBreakout(src)

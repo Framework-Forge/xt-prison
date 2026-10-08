@@ -18,6 +18,7 @@ local queries = {
             `identifier` VARCHAR(100) NOT NULL,
             `jailtime` INT(11) NOT NULL DEFAULT '0',
             `sentence` LONGTEXT NULL DEFAULT NULL,
+            `status` VARCHAR(16) NOT NULL DEFAULT 'free',
             PRIMARY KEY (`identifier`) USING BTREE
         );
         ]]
@@ -69,15 +70,20 @@ local function initialize()
             XTPrison.log('info', 'Coluna de dados da pena adicionada à tabela xt_prison.')
         end
 
-        if not db.table or not db.identifier then return end
+        local statusColumn = checked("SELECT COUNT(COLUMN_NAME) AS count FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'xt_prison' AND COLUMN_NAME = 'status'")
+        if tonumber(statusColumn[1] and statusColumn[1].count) ~= 1 then
+            checked("ALTER TABLE xt_prison ADD COLUMN status VARCHAR(16) NOT NULL DEFAULT 'free'")
+            checked("UPDATE xt_prison SET status = CASE WHEN jailtime > 0 THEN 'jailed' ELSE 'free' END")
+        end
 
+        if not db.table or not db.identifier then return end
         local convertNeeded = checked(("SELECT COUNT(COLUMN_NAME) AS count FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = '%s' AND COLUMN_NAME = 'jailtime'"):format(db.table))
         if not convertNeeded or tonumber(convertNeeded[1] and convertNeeded[1].count) ~= 1 then return end
 
         local rows = checked(('SELECT `%s`, `jailtime` FROM `%s`'):format(db.identifier, db.table))
         for _, row in ipairs(rows) do
-            checked('INSERT IGNORE INTO xt_prison (identifier, jailtime) VALUES (?, ?)', {
-                row[db.identifier], row.jailtime
+            checked('INSERT IGNORE INTO xt_prison (identifier, jailtime, status) VALUES (?, ?, ?)', {
+                row[db.identifier], row.jailtime, (tonumber(row.jailtime) or 0) > 0 and 'jailed' or 'free'
             })
         end
 
@@ -100,8 +106,8 @@ return {
         while not ready and not failure and GetGameTimer() < deadline do Wait(50) end
         return ready, failure or (not ready and 'Banco ainda nao inicializado; tente novamente.') or nil
     end,
-    UPDATE_JAILTIME = 'INSERT INTO xt_prison (identifier, jailtime, sentence) VALUES (?, ?, ?) ON DUPLICATE KEY UPDATE jailtime = VALUES(jailtime), sentence = VALUES(sentence)',
-    LOAD_JAILTIME = 'SELECT `jailtime`, `sentence` FROM xt_prison WHERE `identifier` = ?',
+    UPDATE_JAILTIME = 'INSERT INTO xt_prison (identifier, jailtime, sentence, status) VALUES (?, ?, ?, ?) ON DUPLICATE KEY UPDATE jailtime = VALUES(jailtime), sentence = VALUES(sentence), status = VALUES(status)',
+    LOAD_JAILTIME = 'SELECT `jailtime`, `sentence`, `status` FROM xt_prison WHERE `identifier` = ?',
 
     GET_ITEMS = 'SELECT data FROM xt_prison_items WHERE owner = ?',
     CONFISCATE_ITEMS = 'INSERT INTO xt_prison_items (owner, data) VALUES (?, ?) ON DUPLICATE KEY UPDATE data = VALUES(data)',

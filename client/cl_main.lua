@@ -55,7 +55,7 @@ local function playerLoaded()
 
     local jailTime = pr_lib.callback.await('xt-prison:server:initJailTime', false)
     if jailTime and jailTime ~= 0 and jailTime > 0 then
-        prisonModules.enterPrison(jailTime)
+        runPrisonAction(prisonModules.enterPrison,jailTime)
     end
 end
 

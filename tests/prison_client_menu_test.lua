@@ -25,6 +25,7 @@ FreezeEntityPosition = function() end
 RequestCollisionAtCoord = function() end
 HasCollisionLoadedAroundEntity = function() return now >= 10000 end
 GetResourceState = function() return 'missing' end
+DoesBlipExist = function() return false end
 CreateThread = function(fn) threads[#threads + 1] = fn end
 TriggerServerEvent = function(name) sent[#sent + 1] = name end
 locale = function(key) return key end
@@ -34,6 +35,8 @@ XTPrison = {
     localState = facade,
     load = function(path)
         if path == 'configs.client' then return config end
+        if path == 'configs.prisonbreak' then return {Center=vec3(1,2,50),Radius=100} end
+        if path == 'modules.client.prisonbreak' then return {removeBlip=function() end,removeHackZones=function() end} end
         return {}
     end,
 }
@@ -43,7 +46,7 @@ pr_lib = {
         if name == 'xt-prison:server:removeJob' then return removed, not removed and 'job_removal_failed' or nil end
         return false
     end },
-    target = { addBoxZone = function() return 1 end },
+    target = { addBoxZone = function() return 1 end, removeZone = function() end },
     Notify = function() end,
 }
 state = { jailTime = 5 }
@@ -57,7 +60,63 @@ assert(now >= 12000 and position.x == 1 and position.y == 2, 'entry duration/pos
 assert(sent[#sent] == 'xt-prison:server:removeItems', 'inventory should change after successful positioning')
 local before = now
 assert(prison.enterPrison({ amount = 8 }) and now == before, 'already jailed player should not repeat teleport/fades')
+position=vec3(1000,1000,50)
+assert(prison.enterPrison({amount=8}) and position.x==1 and position.y==2,
+    'An active prisoner outside the boundary must be repositioned instead of skipping entry')
 print('PASS: actual client entry takes over 10 seconds, teleports, reports job failure and does not repeat entry')
+
+config.EnablePrisonOutfits=true
+local outfit={}
+for _,name in ipairs({'mask','arms','pants','shoes','accessories','shirt','jacket'}) do outfit[name]={item=5,texture=1} end
+config.PrisonOufits={male=outfit,female=outfit}
+local clothes,writes={},0
+GetHashKey=function(model) return model end
+IsPedModel=function() return true end
+SetPedComponentVariation=function(_,slot,item,texture,palette) assert(palette==0,'Native must receive the palette argument');clothes[slot]={item,texture};writes=writes+1 end
+GetPedDrawableVariation=function(_,slot) return clothes[slot] and clothes[slot][1] or 0 end
+GetPedTextureVariation=function(_,slot) return clothes[slot] and clothes[slot][2] or 0 end
+state.prisonStatus='jailed'
+before=now
+assert(prison.enterPrison(5) and writes==7 and now==before,'Already inside prison must reapply uniform without repeating teleport')
+prison.reconcilePrisonUniform()
+local originalWait=Wait
+local steps=0
+Wait=function(ms)
+    originalWait(ms);steps=steps+1
+    if steps==1 then now=now+20000;clothes={} end -- Appearance can overwrite the uniform beyond the former 15s window.
+    if steps==3 then state.prisonStatus='fugitive' end
+end
+threads[#threads]()
+assert(writes==14,'Login reconciliation must repair the saved civilian outfit and stop upon escape')
+assert(not prison.applyPrisonUniform() and writes==14,'Fugitive must never receive a prison uniform')
+state.prisonStatus='free'
+assert(not prison.applyPrisonUniform() and writes==14,'Free character must never receive a prison uniform')
+state.prisonStatus='jailed'
+prison.reconcilePrisonUniform()
+local pending=threads[#threads]
+prison.prisonCleanup()
+pending()
+assert(writes==14,'Logout must invalidate pending uniform reconciliation')
+Wait=originalWait
+local modelReadyAt=now+300
+local positionCalls=0
+IsPedModel=function() return now>=modelReadyAt end
+local originalCoords=SetEntityCoords
+SetEntityCoords=function(...)
+    assert(now>=modelReadyAt,'Never teleport Michael before the real character model is ready')
+    positionCalls=positionCalls+1
+    originalCoords(...)
+end
+position=vec3(1000,1000,50)
+assert(prison.enterPrison(5) and positionCalls>0 and writes==21,'Arrival at a prison entry point must dress the final ped')
+SetEntityCoords=originalCoords
+state.prisonStatus='fugitive'
+local beforeFailure=writes
+IsPedModel=function() return false end
+local entered,reason=prison.enterPrison(5)
+assert(not entered and reason=='sentence_changed' and writes==beforeFailure,'A fugitive must not wait for a prison model or receive an outfit')
+config.EnablePrisonOutfits=false
+print('PASS: reconnect uniform, delayed civilian appearance correction, fugitive/free exclusion and logout cancellation')
 
 local resourceRoot = 'E:/[FIVEM]/Forge-Core/resources/[forge]/[forge-scripts]/forge-core/'
 local payload, context
@@ -77,6 +136,10 @@ end
 payload = { prison = { enabled = true, jailed = true, remainingMinutes = 5, clock = 'real' } }
 ForgeCore.Client.Menu.openPlayerMenu()
 assert(find('prison.title'), 'F9 must show active own sentence')
+assert(find('menu.multijob.title').disabled, 'Jailed character must not open My Jobs')
+payload.prison = {enabled=true,jailed=false,fugitive=true,status='fugitive',remainingMinutes=5}
+ForgeCore.Client.Menu.openPlayerMenu()
+assert(find('prison.title') and not find('menu.multijob.title').disabled,'Fugitive must keep prison status and regain job selection')
 payload.prison = nil
 ForgeCore.Client.Menu.openPlayerMenu()
 assert(not find('prison.title'), 'F9 must hide prison when provider unavailable')

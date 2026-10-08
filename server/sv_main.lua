@@ -37,7 +37,9 @@ local function savePlayerJailTime(source)
 
     local sentence = state and state.jailSentence
     if not db.awaitReady() then return false end
-    local written = database.insert(db.UPDATE_JAILTIME, { citizenId, jailTime, sentence and json.encode(sentence) or nil })
+    if not state.prisonLoaded then return false end
+    local written = database.insert(db.UPDATE_JAILTIME, { citizenId, jailTime, sentence and json.encode(sentence) or nil,
+        state.prisonStatus or (jailTime > 0 and 'jailed' or 'free') })
     if written == nil or written == false then
         XTPrison.log('error', ('Falha ao salvar pena de %s.'):format(citizenId))
         return false
@@ -51,14 +53,14 @@ local function loadPlayerJailTime(source)
     local citizenId = getCharID(source)
     if not citizenId then return 0 end
     local cached = pr_lib.cache.get('xt-prison:character:' .. citizenId)
-    if cached then return tonumber(cached.jailTime) or 0 end
+    if cached and cached.prisonLoaded then return cached.prisonStatus == 'fugitive' and 0 or tonumber(cached.jailTime) or 0 end
     local available, err = db.awaitReady()
     if not available then XTPrison.log('error', err); return nil end
     local rows = database.query(db.LOAD_JAILTIME, { citizenId })
     if type(rows) ~= 'table' then return nil end
     if getCharID(source) ~= citizenId then return nil end
     cached = pr_lib.cache.get('xt-prison:character:' .. citizenId)
-    if cached then return tonumber(cached.jailTime) or 0 end
+    if cached and cached.prisonLoaded then return cached.prisonStatus == 'fugitive' and 0 or tonumber(cached.jailTime) or 0 end
     local row = rows[1] or {}
     local decoded, sentence = pcall(json.decode, row.sentence or 'null')
     if not decoded or (sentence ~= nil and type(sentence) ~= 'table') then
@@ -66,17 +68,24 @@ local function loadPlayerJailTime(source)
         return nil
     end
     local jailTime = tonumber(row.jailtime) or 0
-    if sentence and sentence.clock == 'real' and sentence.endAt then
+    if not rows[1] and pr_lib.framework.GetPlayerMetadata then
+        jailTime = tonumber(pr_lib.framework.GetPlayerMetadata(source, 'injail')) or 0
+    end
+    local status = row.status == 'fugitive' and 'fugitive' or (jailTime > 0 and 'jailed' or 'free')
+    if status ~= 'fugitive' and sentence and sentence.clock == 'real' and sentence.endAt then
         jailTime = math.max(0, math.ceil((tonumber(sentence.endAt) - os.time()) / 60))
         sentence.remainingMinutes = jailTime
-    elseif sentence and sentence.clock == 'game' then
+    elseif status ~= 'fugitive' and sentence and sentence.clock == 'game' then
         sentence.nextTickAt = os.time() + math.max(1, tonumber(sentence.tickSeconds) or 2)
         sentence.remainingMinutes = jailTime
     end
-    if not setJailTime(source, jailTime) then return 0 end
+    if status ~= 'fugitive' and jailTime <= 0 then status = 'free' end
+    if not setJailTime(source, jailTime, status) then return nil end
     if sentence and jailTime > 0 then XTPrison.playerState(source):set('jailSentence', sentence, true) end
-    return jailTime
+    return status == 'fugitive' and 0 or jailTime
 end
+
+XTPrison.ensureLoaded = function(src) return loadPlayerJailTime(src) ~= nil end
 
 pr_lib.callback.register('xt-prison:server:initJailTime', function(source)
     return loadPlayerJailTime(source)
@@ -178,7 +187,7 @@ pr_lib.callback.register('xt-prison:server:setJailStatus', function(source, setT
     if not player then return false end
 
     local state = XTPrison.playerState(source)
-    if not state or state.jailTime <= 0 then return false, 'no_sentence' end
+    if not state or state.prisonStatus ~= 'jailed' or state.jailTime <= 0 then return false, 'no_sentence' end
     return state.jailSentence or { remainingMinutes = state.jailTime, tickSeconds = 60 }
 end)
 
@@ -188,6 +197,7 @@ pr_lib.callback.register('xt-prison:server:tickJailTime', function(source)
     local state = XTPrison.playerState(source)
     local sentence = state.jailSentence
     local remaining = tonumber(state.jailTime) or 0
+    if state.prisonStatus ~= 'jailed' then return 0 end
     if remaining <= 0 then return 0 end
 
     if type(sentence) == 'table' and sentence.clock == 'real' and sentence.endAt then
