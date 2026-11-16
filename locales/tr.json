@@ -1,5 +1,6 @@
 {
     "notify": {
+        "action_failed": "Hapishane işlemi başarısız oldu: %s",
         "freedom": "Özgürlük!",
         "new_time_by_roster": "Yeni Hapis Süresi",
         "new_time_by_roster_description": "Hapis süreniz %s ay olarak ayarlandı!",

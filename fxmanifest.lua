@@ -3,44 +3,47 @@ game 'gta5'
 use_experimental_fxv2_oal 'yes'
 lua54 'yes'
 
-author 'xT Development'
-description 'Prison for QB, QBX, OX, ND, & ESX'
+author 'xT Development / Forge Core'
+description 'Prison integrado exclusivamente pelo pr_bridge'
 repository 'https://github.com/xT-Development/xt-prison'
 version '1.4.8'
 
-shared_scripts { '@ox_lib/init.lua' }
+shared_scripts {
+    '@pr_bridge/init.lua',
+    'bridge/shared.lua',
+    'bridge/cache.lua',
+}
+
+dependencies {
+    'pr_bridge',
+}
 
 client_scripts {
-    'bridge/client/*.lua',
-
+    'bridge/client/pr_bridge.lua',
+    'bridge/compat/client.lua',
     'client/*.lua'
 }
 
 server_scripts {
-    '@oxmysql/lib/MySQL.lua',
-
+    'bridge/server/pr_bridge.lua',
     'bridge/compat/server.lua',
-    'bridge/server/*.lua',
-
     'server/*.lua'
 }
 
 files {
-    'audio/data/xt_prison_sounds.dat54.rel',
-    'audio/audiodirectory/xt_prison_sounds.awc',
-
+    'data/audioexample_sounds.dat54.rel',
+    'audiodirectory/jail_sounds.awc',
     'locales/*.json',
-
     'configs/client.lua',
+    'configs/server.lua',
     'configs/prisonbreak.lua',
-
-    'client/modules/*.lua',
-
+    'modules/client/*.lua',
+    'modules/server/*.lua',
+    'modules/break_settings.lua',
     'bridge/compat/client.lua',
-    'bridge/compat/resources.lua'
+    'bridge/compat/resources.lua',
 }
 
-data_file 'AUDIO_WAVEPACK' 'audio/audiodirectory'
-data_file 'AUDIO_SOUNDDATA' 'audio/data/xt_prison_sounds.dat'
+data_file 'AUDIO_WAVEPACK' 'audiodirectory'
+data_file 'AUDIO_SOUNDDATA' 'data/audioexample_sounds.dat'
 
-ox_libs { 'locale' }

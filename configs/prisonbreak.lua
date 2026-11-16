@@ -1,4 +1,11 @@
 return {
+    DoorGroup = 'forge-prison',
+    -- Missing locks are created from these definitions, keyed by HackZones.gate.
+    -- Use the actual door geometry captured in doorlock, NOT the hacking terminal.
+    -- Supports coords/model/heading/rotation, doors (two leaves), doorType,
+    -- closed/open transforms, slideDirection/slideDistance and animation speeds.
+    -- Existing locks are reused, preserving all of these values and permissions.
+    Doors = {},
     Center = vec3(1699.86, 2605.15, 45.56),         -- Center check for prison break
     Radius = 200,                                   -- Radius of prison break
 
@@ -22,7 +29,7 @@ return {
         success = 50
     },
 
-    HackZones = {                                   -- Gate = Name of door in ox_doorlock database
+    HackZones = {                                   -- Gate = name registered by the active door resource
         { coords = vec3(1846.05, 2604.7, 45.65), gate = 'prison 1', radius = 0.4 },
         { coords = vec3(1819.55, 2604.7, 45.6),  gate = 'prison 2', radius = 0.4 },
         { coords = vec3(1817.4, 2602.7, 45.65),  gate = 'prison 2', radius = 0.4 },
@@ -32,8 +39,12 @@ return {
     },
 
     GateHackMinigame = function(gateID)             -- Use any minigame you want, return success or fail
-        local difficulty = { 'easy', 'easy' }
-        local keys = { 'w', 's' }
-        return lib.skillCheck(difficulty, keys)
+        local zone = XTPrison.load('configs.prisonbreak').HackZones[gateID]
+        if not zone then return false end
+        local glitch=pr_lib.load('@pr_bridge/bridge/minigames/glitch/client')
+        return glitch.Start({game=zone.game or 'CircuitBreaker', dificultMinigame={vehiCarjack={
+            difficulty=zone.difficulty or 3, numLives=zone.lives or 5,
+            levelNumber=zone.level or 1, difficultyLevel=zone.difficulty or 3
+        }}}) == true
     end
 }

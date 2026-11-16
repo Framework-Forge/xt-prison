@@ -1,5 +1,5 @@
-local utils         = require 'server.modules.utils'
-local resources     = require 'bridge.compat.resources'
+local utils         = XTPrison.load 'modules.server.utils'
+local resources     = XTPrison.load 'bridge.compat.resources'
 
 -- When setJailTime is called, compat for other resources is called
 function syncJailCompatibility(src, time)
@@ -13,7 +13,9 @@ end
 -- Compat for QB/QBX Prison Original Event --
 RegisterNetEvent('prison:server:SetJailStatus', function(jailTime)
     local src = source
-    setJailTime(src, ((jailTime < 0) and 0 or jailTime))
+    -- Legacy clients cannot clear or rewrite a server-owned sentence.
+    local state=XTPrison.playerState(src)
+    if state then syncJailCompatibility(src,state.prisonStatus=='jailed' and state.jailTime or 0) end
 end)
 
 -- Compat Event for QB Police Job --
@@ -24,8 +26,11 @@ RegisterNetEvent('police:server:JailPlayer', function(playerId, time)
 
     if not utils.isCop(src) then return end
 
-    local jailed = lib.callback.await('xt-prison:client:enterJail', playerId, time)
+    local jailed, reason = XTPrison.jailPlayer(playerId, time)
+    if not jailed then XTPrison.actionFailure(src, playerId, 'jail', reason); return end
     if jailed then
-        lib.notify(src, { title = ('Sent to Jail for %s Months'):format(time), type = 'success' })
+        XTPrison.notifyPlayer(src, { title = ('Sent to Jail for %s minutes'):format(time), type = 'success' })
     end
 end)
+
+
