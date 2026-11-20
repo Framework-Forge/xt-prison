@@ -6,7 +6,7 @@ lua54 'yes'
 author 'xT Development / Forge Core'
 description 'Prison integrado exclusivamente pelo pr_bridge'
 repository 'https://github.com/xT-Development/xt-prison'
-version '1.4.8'
+version '1.4.10'
 
 shared_scripts {
     '@pr_bridge/init.lua',
